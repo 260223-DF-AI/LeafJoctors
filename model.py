@@ -1,11 +1,12 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
-import numpy as np
-from PIL import Image
+
 # import sys
 
 # print(torch.cuda.is_available())
@@ -32,11 +33,13 @@ class LeafModel(nn.Module):
         # use adaptive pooling to avoid hardcoding the flattened dimension
         # avoids matmul shape mismatches
         self.adaptive_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.drop_layer = nn.Dropout(p=0.3)
         self.classify = nn.Sequential(nn.Flatten(), nn.Linear(64, num_classes))
 
     def forward(self, x):
         x = self.features(x)
         x = self.adaptive_pool(x)
+        x = self.drop_layer(x)
         x = self.classify(x)
         return x
 
@@ -50,7 +53,31 @@ data_transforms = transforms.Compose(
         ),  # unsure about these values, prone to change
     ]
 )
-dataset = ImageFolder(root="data/OLID_dataset", transform=data_transforms)
+
+
+# temporary flag to switch which dataset is being used
+# USE_DATASET: str = "OLID"
+USE_DATASET: str = "plant_pathology"
+PLANT_PATHOLOGY_DATASET_LOCATION: str = f"data/{USE_DATASET}"
+if USE_DATASET == "plant_pathology":
+    plants: list[str] = os.listdir(PLANT_PATHOLOGY_DATASET_LOCATION)
+    # load each folder as a dataset separately so their labels of ["healthy", "diseased"] are used automatically
+    datasets: list[ImageFolder] = []
+    for plant in plants:
+        dataset = ImageFolder(
+            root=f"{PLANT_PATHOLOGY_DATASET_LOCATION}/{plant}",
+            transform=data_transforms,
+        )
+        datasets.append(dataset)
+
+    # combine all datasets into one so there's only healthy n diseased labels
+    dataset = ConcatDataset(datasets)
+
+else:
+    dataset = ImageFolder(
+        root="OLID",
+        transform=data_transforms,
+    )
 
 # https://docs.pytorch.org/docs/stable/data.html#torch.utils.data.random_split
 training_dataset, validation_dataset = torch.utils.data.random_split(
@@ -59,14 +86,14 @@ training_dataset, validation_dataset = torch.utils.data.random_split(
 
 training_dataloader = DataLoader(
     dataset=training_dataset,
-    batch_size=64,
+    batch_size=24,
     shuffle=True,
     num_workers=8,
 )
 
 validation_dataloader = DataLoader(
     dataset=validation_dataset,
-    batch_size=64,
+    batch_size=24,
     shuffle=False,
     num_workers=8,
 )
@@ -111,16 +138,20 @@ def evaluate(dataloader, model, loss_fn, device):
 
 
 def main():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda"
     print(f"{device=}")
 
-    num_classes = len(dataset.classes)
+    # ConcatDataset does not have classes attribute like a singular ImageFolder
+    # so temporarily default to two
+    # num_classes = len(dataset.classes)
+    num_classes = 2
     model = LeafModel(num_classes=num_classes)
     model.to(device)
 
     print(model)
 
-    NUM_EPOCHS = 5
+    NUM_EPOCHS = 10
     optimizer = optim.Adam(model.parameters(), lr=0.005)
     criterion = nn.CrossEntropyLoss()
 
