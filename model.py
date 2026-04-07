@@ -7,9 +7,12 @@ from torch.utils.data import ConcatDataset, DataLoader
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 
+
 # import sys
 
 # print(torch.cuda.is_available())
+
+
 # sys.exit()
 
 
@@ -53,7 +56,6 @@ data_transforms = transforms.Compose(
         ),  # unsure about these values, prone to change
     ]
 )
-
 
 # temporary flag to switch which dataset is being used
 # USE_DATASET: str = "OLID"
