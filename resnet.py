@@ -1,42 +1,82 @@
 import os
-import sys
 import time
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import datasets, transforms, models
+from torchvision import transforms, models
 
-DATA_ROOT = "./../../W6/Demo/data/doggos"
-TRAIN_DIR = os.path.join(DATA_ROOT, "train")
-TEST_DIR = os.path.join(DATA_ROOT, "test")
-LOG_DIR = "runs/doggo_logs"
-MODEL_PATH = "doggo.pth"
+import data_handler
 
-if not os.path.exists(TRAIN_DIR):
-    print(f"ERROR: Dataset directory '{TRAIN_DIR}' not found.")
-    print("Please ensure the 'doggo' folder is extracted in the script's directory.")
-    sys.exit(1)
+MODEL_PATH = "drfrond.pth"
+LOG_DIR = "leaf_logs"
 
-data_transforms = transforms.Compose([
-    transforms.Resize((256, 256)),
-    transforms.RandomHorizontalFlip(p=0.3),
-    transforms.RandomVerticalFlip(p=0.3),
-    transforms.RandomRotation(45),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-])
+data_transforms = transforms.Compose(
+    [
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
+        ),  # unsure about these values, prone to change
+    ]
+)
 
-train_dataset = datasets.ImageFolder(root=TRAIN_DIR, transform=data_transforms)
-test_dataset = datasets.ImageFolder(root=TEST_DIR, transform=data_transforms)
+datasets = []
 
-print(f"Classes found: {train_dataset.classes}")
-print(f"Total training images available: {len(train_dataset)}")
+# --- Load plant_pathology ---
+# plants = os.listdir("data/plant_pathology")
+plants = [
+    p for p in os.listdir("data/plant_pathology")
+    if os.path.isdir(f"data/plant_pathology/{p}")
+]
 
-train_loader = DataLoader(train_dataset, batch_size=10, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=10, shuffle=False)
+for plant in plants:
+    d = data_handler.BinaryLabelDataset(
+        root=f"data/plant_pathology/{plant}",
+        transform=data_transforms,
+    )
+    datasets.append(d)
+
+# --- Load OLID ---
+olid_dataset = data_handler.TripleLabelDataset(
+    root="data/OLID",
+    transform=data_transforms,
+)
+datasets.append(olid_dataset)
+
+# --- Combine everything ---
+dataset = ConcatDataset(datasets)
+
+# https://docs.pytorch.org/docs/stable/data.html#torch.utils.data.random_split
+# training_dataset, validation_dataset = torch.utils.data.random_split(
+#    dataset, [0.8, 0.2]
+# )
+
+train_size = int(0.8 * len(dataset))
+val_size = len(dataset) - train_size
+
+training_dataset, validation_dataset = torch.utils.data.random_split(
+    dataset, [train_size, val_size]
+)
+
+training_dataloader = DataLoader(
+    dataset=training_dataset,
+    batch_size=24,
+    shuffle=True,
+    num_workers=8,
+)
+
+validation_dataloader = DataLoader(
+    dataset=validation_dataset,
+    batch_size=24,
+    shuffle=False,
+    num_workers=8,
+)
+
+# print(f"Classes found: {training_dataset.classes}")
+print(f"Total training images available: {len(training_dataset)}")
 
 
 class PreTrainedModel(nn.Module):
@@ -52,7 +92,7 @@ class PreTrainedModel(nn.Module):
 
         # Replace the final layer with one that matches our number of output classes
         num_ftrs = self.model.fc.in_features
-        self.model.fc = nn.Linear(num_ftrs, 2)
+        self.model.fc = nn.Linear(num_ftrs, 3)
 
     def forward(self, x):
         return self.model(x)
@@ -83,7 +123,7 @@ class LeafModel(nn.Module):
             nn.Linear(32 * 62 * 62, 128),  # 32 filters, 62x62 pixels, 128 neurons
             nn.ReLU(),
             nn.Dropout(p=0.3),
-            nn.Linear(128, 2)  # 128 neurons, 2 outputs
+            nn.Linear(128, 3)  # 128 neurons, 3 outputs
         )
 
     def forward(self, x):
@@ -188,7 +228,7 @@ def evaluate(dataloader, model, loss_fn, writer, device):
 
 
 def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda")  # if torch.cuda.is_available() else "cpu")
     print("Running on: ", device)
 
     print()
@@ -197,8 +237,9 @@ def main():
 
     print()
     print("--- Instantiate Model ---")
-    model = LeafModel()
-    # model = PreTrainedModel().to(device)
+    # model = LeafModel()
+    # model.to(device)
+    model = PreTrainedModel().to(device)
     best_loss = float('inf')
 
     print("Adding graph to tensorboard...")
@@ -208,7 +249,7 @@ def main():
     NUM_EPOCHS = 1
     optimizer = optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
-        lr=0.001
+        lr=0.0003
     )
     criterion = nn.CrossEntropyLoss()
 
@@ -223,9 +264,9 @@ def main():
         print("Loaded best model from ", MODEL_PATH)
 
     for epoch in range(NUM_EPOCHS):
-        model, best_loss, early_stopped = train_loop(train_loader, model, criterion, optimizer, epoch, best_loss,
+        model, best_loss, early_stopped = train_loop(training_dataloader, model, criterion, optimizer, epoch, best_loss,
                                                      writer, device, early_stop)
-        evaluate(test_loader, model, criterion, writer, device)
+        evaluate(validation_dataloader, model, criterion, writer, device)
 
         if early_stopped:
             print("Broke early")
