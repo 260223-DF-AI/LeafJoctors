@@ -5,7 +5,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import ConcatDataset, DataLoader
 from torchvision import transforms
-from torchvision.datasets import ImageFolder
+
+import data_handler
 
 
 # import sys
@@ -57,33 +58,42 @@ data_transforms = transforms.Compose(
     ]
 )
 
-# temporary flag to switch which dataset is being used
-# USE_DATASET: str = "OLID"
-USE_DATASET: str = "plant_pathology"
-PLANT_PATHOLOGY_DATASET_LOCATION: str = f"data/{USE_DATASET}"
-if USE_DATASET == "plant_pathology":
-    plants: list[str] = os.listdir(PLANT_PATHOLOGY_DATASET_LOCATION)
-    # load each folder as a dataset separately so their labels of ["healthy", "diseased"] are used automatically
-    datasets: list[ImageFolder] = []
-    for plant in plants:
-        dataset = ImageFolder(
-            root=f"{PLANT_PATHOLOGY_DATASET_LOCATION}/{plant}",
-            transform=data_transforms,
-        )
-        datasets.append(dataset)
+datasets = []
 
-    # combine all datasets into one so there's only healthy n diseased labels
-    dataset = ConcatDataset(datasets)
+# --- Load plant_pathology ---
+# plants = os.listdir("data/plant_pathology")
+plants = [
+    p for p in os.listdir("data/plant_pathology")
+    if os.path.isdir(f"data/plant_pathology/{p}")
+]
 
-else:
-    dataset = ImageFolder(
-        root="OLID",
+for plant in plants:
+    d = data_handler.BinaryLabelDataset(
+        root=f"data/plant_pathology/{plant}",
         transform=data_transforms,
     )
+    datasets.append(d)
+
+# --- Load OLID ---
+olid_dataset = data_handler.TripleLabelDataset(
+    root="data/OLID",
+    transform=data_transforms,
+)
+datasets.append(olid_dataset)
+
+# --- Combine everything ---
+dataset = ConcatDataset(datasets)
 
 # https://docs.pytorch.org/docs/stable/data.html#torch.utils.data.random_split
+# training_dataset, validation_dataset = torch.utils.data.random_split(
+#    dataset, [0.8, 0.2]
+# )
+
+train_size = int(0.8 * len(dataset))
+val_size = len(dataset) - train_size
+
 training_dataset, validation_dataset = torch.utils.data.random_split(
-    dataset, [0.8, 0.2]
+    dataset, [train_size, val_size]
 )
 
 training_dataloader = DataLoader(
@@ -147,7 +157,7 @@ def main():
     # ConcatDataset does not have classes attribute like a singular ImageFolder
     # so temporarily default to two
     # num_classes = len(dataset.classes)
-    num_classes = 2
+    num_classes = 3
     model = LeafModel(num_classes=num_classes)
     model.to(device)
 
