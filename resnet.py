@@ -9,15 +9,15 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms, models
 
-# DATA_ROOT = "data"
-# TRAIN_DIR = os.path.join(DATA_ROOT, "train")
-# TEST_DIR = os.path.join(DATA_ROOT, "test")
-# LOG_DIR = "runs/doggo_logs"
-# MODEL_PATH = "doggo.pth"
+DATA_ROOT = "./../../W6/Demo/data/doggos"
+TRAIN_DIR = os.path.join(DATA_ROOT, "train")
+TEST_DIR = os.path.join(DATA_ROOT, "test")
+LOG_DIR = "runs/doggo_logs"
+MODEL_PATH = "doggo.pth"
 
 if not os.path.exists(TRAIN_DIR):
     print(f"ERROR: Dataset directory '{TRAIN_DIR}' not found.")
-    # print("Please ensure the 'doggo' folder is extracted in the script's directory.")
+    print("Please ensure the 'doggo' folder is extracted in the script's directory.")
     sys.exit(1)
 
 data_transforms = transforms.Compose([
@@ -92,7 +92,26 @@ class LeafModel(nn.Module):
         return x
 
 
-def train_loop(dataloader, model, loss_fn, optimizer, epoch, best_loss, writer, device):
+class EarlyStopping:
+    def __init__(self, patience=20):
+        self.patience = patience  # how many batches without improvement to allow
+        self.counter = 0  # num batches w/o improvement
+        self.best_loss = float('inf')  # best loss
+        self.early_stop = False
+
+    def __call__(self, loss):
+        if loss < self.best_loss:  # if loss improved (got smaller)
+            self.best_loss = loss  # update best loss
+            self.counter = 0  # reset counter
+            return self.early_stop, True
+        else:  # if loss didn't improve
+            self.counter += 1  # increment counter
+            if self.counter >= self.patience:  # if counter exceeds patience
+                self.early_stop = True  # early stop
+        return self.early_stop, False
+
+
+def train_loop(dataloader, model, loss_fn, optimizer, epoch, best_loss, writer, device, early_stop):
     print()
 
     print(f"\n--- Training Epoch {epoch + 1} ---")
@@ -112,7 +131,9 @@ def train_loop(dataloader, model, loss_fn, optimizer, epoch, best_loss, writer, 
 
         # print(f"Batch {batch}: Loss = {loss.item():>7f}")
 
-        if loss < best_loss:
+        should_stop, improved = early_stop(loss.item())
+
+        if improved:
             best_loss = loss
 
             print("New best model found! Loss: ", loss.item(), " Saving...")
@@ -124,13 +145,21 @@ def train_loop(dataloader, model, loss_fn, optimizer, epoch, best_loss, writer, 
                 'loss': loss,
             }, MODEL_PATH)
 
-        if batch % 100 == 0:
-            print(f"Batch {batch}: Loss = {loss.item():>7f}")
+        print(f"Batch {batch}: Loss = {loss.item():>7f}")
+        # if batch % 100 == 0:
+        #     print(f"Batch {batch}: Loss = {loss.item():>7f}")
+
+        # if batch != 0 and (best_loss - loss) < 0.001:
+        #     print("That's all folks!")
+        #     break
+        # Look for low benefit to the training like this ^^
+        if should_stop:
+            return model, early_stop.best_loss, True
 
     end_time = time.time()
     print(f"Epoch {epoch + 1} completed: {batch + 1} batches processed")
     print(f"Time taken: {end_time - start_time:.2f} seconds")
-    return model, best_loss
+    return model, best_loss, False
 
 
 def evaluate(dataloader, model, loss_fn, writer, device):
@@ -159,7 +188,7 @@ def evaluate(dataloader, model, loss_fn, writer, device):
 
 
 def main():
-    device = torch.device("cuda")  # if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running on: ", device)
 
     print()
@@ -168,8 +197,8 @@ def main():
 
     print()
     print("--- Instantiate Model ---")
-    #   model = DoggoModel()
-    model = PreTrainedModel().to(device)
+    model = LeafModel()
+    # model = PreTrainedModel().to(device)
     best_loss = float('inf')
 
     print("Adding graph to tensorboard...")
@@ -183,6 +212,8 @@ def main():
     )
     criterion = nn.CrossEntropyLoss()
 
+    early_stop = EarlyStopping()
+
     print("--- Load Best Model ---")
     if os.path.exists(MODEL_PATH):
         best_model = torch.load(MODEL_PATH, weights_only=True)
@@ -192,8 +223,13 @@ def main():
         print("Loaded best model from ", MODEL_PATH)
 
     for epoch in range(NUM_EPOCHS):
-        model, best_loss = train_loop(train_loader, model, criterion, optimizer, epoch, best_loss, writer, device)
+        model, best_loss, early_stopped = train_loop(train_loader, model, criterion, optimizer, epoch, best_loss,
+                                                     writer, device, early_stop)
         evaluate(test_loader, model, criterion, writer, device)
+
+        if early_stopped:
+            print("Broke early")
+            break
 
 
 if __name__ == "__main__":

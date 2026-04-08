@@ -2,6 +2,34 @@ import os
 
 from torchvision import datasets, transforms
 
+
+# necessary to make sure PyTorch consistently maps 0 and 1 to plant_pathology
+class BinaryLabelDataset(datasets.ImageFolder):
+    def __init__(self, root, transform=None):
+        super().__init__(root, transform=transform)
+
+        # force consistent mapping
+        LABEL_MAP = {
+            "healthy": 0,
+            "diseased": 1,
+        }
+
+        new_samples = []
+        for path, _ in self.samples:
+            folder_name = os.path.basename(os.path.dirname(path)).lower()
+
+            if folder_name in LABEL_MAP:
+                new_samples.append((path, LABEL_MAP[folder_name]))
+            else:
+                raise ValueError(f"Unknown label: {folder_name}")
+
+        self.samples = new_samples
+        self.targets = [s[1] for s in new_samples]
+
+        self.classes = ["healthy", "diseased", "pest-infested"]
+        self.class_to_idx = {"healthy": 0, "diseased": 1, "pest-infested": 2}
+
+
 # translate pre-labeled data into more general label categories
 OLID_LABELS = {
     "healthy": 0,
@@ -53,8 +81,9 @@ class TripleLabelDataset(datasets.ImageFolder):
 
         self.samples = new_samples
         self.targets = [s[1] for s in new_samples]
-        self.classes = ["Healthy", "Diseased", "Pest-infested"]
-        self.class_to_idx = {cls: i for i, cls in enumerate(self.classes)}
+        self.classes = ["healthy", "diseased", "pest-infested"]
+        # self.class_to_idx = {cls: i for i, cls in enumerate(self.classes)}
+        self.class_to_idx = {"healthy": 0, "diseased": 1, "pest-infested": 2}
 
 
 data_transform = transforms.Compose(
@@ -80,6 +109,8 @@ def retrieve_dataset(dataset_folder: str):
 if __name__ == "__main__":
     # dataset = retrieve_dataset("plant_pathology")
     dataset = retrieve_dataset("OLID")
+
+    # dataset = datasets.ImageFolder(root="data/plant_pathology")
 
     print(f"Total images loaded: {len(dataset)}")
     print(f"Classes: {dataset.classes}")
