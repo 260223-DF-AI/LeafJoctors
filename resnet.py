@@ -115,13 +115,18 @@ class PreTrainedModel(nn.Module):
 
         # Utilize metrics like F1 score to determine best model for our data
         # self.model = models.resnet34(weights=models.ResNet34_Weights.DEFAULT)
-        self.model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-        # self.model = models.resnet101(weights=models.ResNet101_Weights.DEFAULT)
+        # self.model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        self.model = models.resnet101(weights=models.ResNet101_Weights.DEFAULT)
         # self.model = models.resnet152(weights=models.ResNet152_Weights.DEFAULT)
 
         # Freeze all layers
         for param in self.model.parameters():
             param.requires_grad = False
+
+        # try out unfreezing fourth layer
+        # for name, param in self.model.named_parameters():
+        #     if "layer4" in name:
+        #         param.requires_grad = True
 
         # Replace the final layer with one that matches our number of output classes
         num_ftrs = self.model.fc.in_features
@@ -289,15 +294,19 @@ def main():
     writer.add_graph(model, dummy_data)
 
     NUM_EPOCHS = 10
-    optimizer = optim.Adam(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001
+    optimizer = optim.SGD(
+        filter(lambda p: p.requires_grad, model.parameters()), lr=0.001, momentum=0.9
     )
+    # optimizer = optim.Adam(
+    #     filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001
+    # )
     criterion = nn.CrossEntropyLoss(weight=weights)
 
     early_stop = EarlyStopping()
 
+    LOAD_MODEL: bool = False
     print("--- Load Best Model ---")
-    if os.path.exists(MODEL_PATH):
+    if os.path.exists(MODEL_PATH) and LOAD_MODEL:
         best_model = torch.load(MODEL_PATH, weights_only=True)
         model.load_state_dict(best_model["model_state_dict"])
         optimizer.load_state_dict(best_model["optimizer_state_dict"])
