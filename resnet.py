@@ -1,188 +1,90 @@
-import os
 import time
-from collections import Counter
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import ConcatDataset, DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import Accuracy, F1Score, Precision, Recall
-from torchvision import models, transforms
+from torchvision import models
 
-import data_handler
+import utils
 
-device = torch.device("cuda")
-MODEL_PATH = "drfrond.pth"
-LOG_DIR = "leaf_logs"
+# DEFAULT VALUES
+SEED = 55
+NUM_CLASSES = 3
+INPUT_SIZE = 224
+NUM_EPOCHS = 100
+BATCH_SIZE = 24
+NUM_WORKERS = 16
+TRAIN_SPLIT = 0.8
+CHECKPOINT_DIR = "checkpoints"
+LOG_ROOT = "leaf_logs"
+LOAD_MODEL = False
 
-# Ensure deterministic results between model runs
-torch.manual_seed(55)
-torch.backends.cudnn.deterministic = True
+MODEL_CONFIGS = {
+    "resnet34": {
+        "builder": models.resnet34,
+        "weights": models.ResNet34_Weights.DEFAULT,
+    },
+    "resnet50": {
+        "builder": models.resnet50,
+        "weights": models.ResNet50_Weights.DEFAULT,
+    },
+    "resnet101": {
+        "builder": models.resnet101,
+        "weights": models.ResNet101_Weights.DEFAULT,
+    },
+    "resnet152": {
+        "builder": models.resnet152,
+        "weights": models.ResNet152_Weights.DEFAULT,
+    },
+}
 
-data_transforms = transforms.Compose(
-    [
-        transforms.Resize((224, 224)),  # resnet was trained on 224x224 images
-        # improve generalizability with random image changes
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomCrop(224, padding=4),
-        transforms.RandomRotation(15),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2),
-        transforms.RandomVerticalFlip(),
-        transforms.GaussianBlur(kernel_size=3),
-        transforms.ToTensor(),
-        transforms.Normalize(
-            [0.485, 0.456, 0.406],
-            [0.229, 0.224, 0.225],  # in line with ResNet's specified `ImageNet` stats
-        ),
-        # transforms.RandomErasing(),
-    ]
-)
-
-datasets = []
-
-# --- Load plant_pathology ---
-# plants = os.listdir("data/plant_pathology")
-plants = [
-    p
-    for p in os.listdir("data/plant_pathology")
-    if os.path.isdir(f"data/plant_pathology/{p}")
-]
-
-for plant in plants:
-    d = data_handler.BinaryLabelDataset(
-        root=f"data/plant_pathology/{plant}",
-        transform=data_transforms,
-    )
-    datasets.append(d)
-
-# --- Load OLID ---
-olid_dataset = data_handler.TripleLabelDataset(
-    root="data/OLID",
-    transform=data_transforms,
-)
-datasets.append(olid_dataset)
-
-# figure out weights of each label based on how many images of each we have
-all_labels = []
-for d in datasets:
-    all_labels.extend(d.targets)
-
-counts = Counter(all_labels)
-total = sum(counts.values())
-
-weights = [total / counts[i] for i in range(3)]
-weights = torch.tensor(weights).to(device)
-
-# --- Combine everything ---
-dataset = ConcatDataset(datasets)
-
-train_size = int(0.8 * len(dataset))
-val_size = len(dataset) - train_size
-
-training_dataset, validation_dataset = torch.utils.data.random_split(
-    dataset, [train_size, val_size]
-)
-
-print(
-    f"Train set size: {len(training_dataset)}, Val set size: {len(validation_dataset)}"
-)
-
-training_dataloader = DataLoader(
-    dataset=training_dataset,
-    batch_size=24,
-    shuffle=True,
-    num_workers=8,
-)
-
-validation_dataloader = DataLoader(
-    dataset=validation_dataset,
-    batch_size=24,
-    shuffle=False,
-    num_workers=8,
-)
-
-# print(f"Classes found: {training_dataset.classes}")
-# print(f"Total training images available: {len(training_dataset)}")
+BASE_MODELS = MODEL_CONFIGS.keys()
 
 
 class PreTrainedModel(nn.Module):
-    def __init__(self):
+    def __init__(
+        self,
+        base_model,
+        trainable_layers=None,
+    ):
         super(PreTrainedModel, self).__init__()
+        self.model = base_model
 
-        # Load ResNet18 with weights pre-trained on ImageNet
-        # self.model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-
-        # Utilize metrics like F1 score to determine best model for our data
-        # self.model = models.resnet34(weights=models.ResNet34_Weights.DEFAULT)
-        # self.model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-        self.model = models.resnet101(weights=models.ResNet101_Weights.DEFAULT)
-        # self.model = models.resnet152(weights=models.ResNet152_Weights.DEFAULT)
-
-        # Freeze all layers
+        # freeze base model layers
         for param in self.model.parameters():
             param.requires_grad = False
 
-        # try out unfreezing fourth layer
-        # for name, param in self.model.named_parameters():
-        #     if "layer4" in name:
-        #         param.requires_grad = True
-
-        # Replace the final layer with one that matches our number of output classes
         num_ftrs = self.model.fc.in_features
         self.model.fc = nn.Linear(num_ftrs, 3)
+
+        # unfreeze layers named in `trainable_layers`
+        if trainable_layers:
+            for name, param in self.model.named_parameters():
+                if any(layer_name in name for layer_name in trainable_layers):
+                    param.requires_grad = True
+
+        # unfreeze final layer
+        for param in self.model.fc.parameters():
+            param.requires_grad = True
 
     def forward(self, x):
         return self.model(x)
 
 
-class LeafModel(nn.Module):
-    def __init__(self):
-        super(LeafModel, self).__init__()
-        self.flatten = nn.Flatten()
-
-        self.features = nn.Sequential(
-            # nn.Conv2d is a 2D convolution layer, slides a kernel over the input image
-            # nn.MaxPool2d is a 2D max pooling layer, reduces the spatial dimensions of the input image
-            # nn.ReLU is a rectified linear unit (ReLU) activation function, introduces non-linearity
-            # nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1)
-            nn.Conv2d(
-                3, 16, kernel_size=3, stride=1
-            ),  # Convolute 3x3 kernel, stepping by 1
-            nn.ReLU(),
-            nn.MaxPool2d(2),  # 256x256 -> 128x128
-            nn.Conv2d(16, 32, kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),  # 128x128 -> 64x64
-        )
-
-        self.classify = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(32 * 62 * 62, 128),  # 32 filters, 62x62 pixels, 128 neurons
-            nn.ReLU(),
-            nn.Dropout(p=0.3),
-            nn.Linear(128, 3),  # 128 neurons, 3 outputs
-        )
-
-    def forward(self, x):
-        x = self.features(x)
-        x = self.classify(x)
-        return x
-
-
 class EarlyStopping:
-    def __init__(self, patience=100):
-        self.patience = patience  # how many batches without improvement to allow
-        self.counter = 0  # num batches w/o improvement
+    def __init__(self, patience=7):
+        self.patience = patience  # how many epochs without improvement in validation loss to allow
+        self.counter = 0  # num epochs w/o improvement
         self.best_loss = float("inf")  # best loss
         self.early_stop = False
 
     def __call__(self, loss):
-        if loss < self.best_loss:  # if loss improved (got smaller)
-            self.best_loss = loss  # update best loss
+        if loss < self.best_loss:  # if validation loss improved (got smaller)
+            self.best_loss = loss  # update best validation loss
             self.counter = 0  # reset counter
             return self.early_stop, True
-        else:  # if loss didn't improve
+        else:  # if validation loss didn't improve
             self.counter += 1  # increment counter
             if self.counter >= self.patience:  # if counter exceeds patience
                 self.early_stop = True  # early stop
@@ -192,9 +94,7 @@ class EarlyStopping:
 def train_loop(
     dataloader, model, loss_fn, optimizer, epoch, best_loss, writer, device, early_stop
 ):
-    print()
-
-    print(f"\n--- Training Epoch {epoch + 1} ---")
+    print(f"\n\n--- Training Epoch {epoch + 1} ---")
 
     model.train()
     start_time = time.time()
@@ -209,12 +109,7 @@ def train_loop(
 
         writer.add_scalar("Loss/train", loss.item(), batch)
 
-        # print(f"Batch {batch}: Loss = {loss.item():>7f}")
-
         print(f"Batch {batch}: Loss = {loss.item():>7f}")
-
-        # Stop when the model's loss is not improving over many batches
-        # Early stopping moved to main after validation
 
     end_time = time.time()
     print(f"Epoch {epoch + 1} completed: {batch + 1} batches processed")
@@ -222,7 +117,7 @@ def train_loop(
     return model, None, False
 
 
-def evaluate(dataloader, model, loss_fn, writer, device):
+def evaluate(dataloader, model, loss_fn, writer, device, epoch):
     print()
     print("--- Eval Model ---")
 
@@ -258,11 +153,12 @@ def evaluate(dataloader, model, loss_fn, writer, device):
     rec = recall(preds, targets)
     f1_score = f1(preds, targets)
 
-    writer.add_scalar("Loss/test", test_loss / total)
-    writer.add_scalar("Accuracy/test", acc)
-    writer.add_scalar("Precision/test", prec)
-    writer.add_scalar("Recall/test", rec)
-    writer.add_scalar("F1/test", f1_score)
+    # tensorboard metrics
+    writer.add_scalar("Loss/test", test_loss / total, epoch)
+    writer.add_scalar("Accuracy/test", acc, epoch)
+    writer.add_scalar("Precision/test", prec, epoch)
+    writer.add_scalar("Recall/test", rec, epoch)
+    writer.add_scalar("F1/test", f1_score, epoch)
 
     print("Total Samples: ", total)
     print("Correct Predictions: ", correct)
@@ -274,45 +170,57 @@ def evaluate(dataloader, model, loss_fn, writer, device):
     return test_loss / total, acc.item(), f1_score.item()
 
 
-def main():
-    device = torch.device("cuda")  # if torch.cuda.is_available() else "cpu")
-    print("Running on: ", device)
+def get_model_config(model_name):
+    if model_name not in MODEL_CONFIGS:
+        raise ValueError(f"Unsupported backbone: {model_name}")
 
-    print()
-    print("--- Tensorboard Setup---")
-    writer = SummaryWriter(LOG_DIR)
+    return MODEL_CONFIGS[model_name]
 
-    print()
-    print("--- Instantiate Model ---")
-    # model = LeafModel()
-    # model.to(device)
-    model = PreTrainedModel().to(device)
+
+def create_base_model(model_name):
+    backbone_config = get_model_config(model_name)
+    return backbone_config["builder"](weights=backbone_config["weights"])
+
+
+def train_model(model_name, device):
+    transform = utils.build_data_transforms(input_size=INPUT_SIZE)
+    datasets = utils.load_training_datasets(transform=transform)
+    weights = utils.compute_class_weights(datasets, NUM_CLASSES, device)
+    training_dataloader, validation_dataloader = utils.create_dataloaders(
+        datasets,
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        train_split=TRAIN_SPLIT,
+        seed=SEED,
+    )
+
+    print(
+        f"Train set size: {len(training_dataloader.dataset)}, "
+        f"Val set size: {len(validation_dataloader.dataset)}"
+    )
+
+    writer = utils.create_summary_writer(f"{LOG_ROOT}/{model_name}")
+    base_model = create_base_model(model_name)
+    model = PreTrainedModel(base_model).to(device)
     best_loss = float("inf")
+    best_acc = 0.0
+    best_f1 = 0.0
+    checkpoint_path = f"{CHECKPOINT_DIR}/{model_name}2.pth"
 
-    print("Adding graph to tensorboard...")
-    dummy_data = torch.randn(1, 3, 256, 256).to(device)
-    writer.add_graph(model, dummy_data)
+    print(f"\n--- Instantiate Model: {model_name} ---")
 
-    NUM_EPOCHS = 10
     optimizer = optim.SGD(
         filter(lambda p: p.requires_grad, model.parameters()), lr=0.001, momentum=0.9
     )
-    # optimizer = optim.Adam(
-    #     filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001
-    # )
     criterion = nn.CrossEntropyLoss(weight=weights)
-
     early_stop = EarlyStopping()
 
-    LOAD_MODEL: bool = False
-    print("--- Load Best Model ---")
-    if os.path.exists(MODEL_PATH) and LOAD_MODEL:
-        best_model = torch.load(MODEL_PATH, weights_only=True)
-        model.load_state_dict(best_model["model_state_dict"])
-        optimizer.load_state_dict(best_model["optimizer_state_dict"])
-        best_loss = best_model["loss"]
+    if LOAD_MODEL:
+        checkpoint = utils.load_checkpoint(checkpoint_path, device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        best_loss = checkpoint["loss"]
         early_stop.best_loss = best_loss
-        print("Loaded best model from ", MODEL_PATH, f" with loss of {best_loss}")
 
     for epoch in range(NUM_EPOCHS):
         model, _, _ = train_loop(
@@ -327,23 +235,26 @@ def main():
             early_stop,
         )
         val_loss, val_acc, val_f1 = evaluate(
-            validation_dataloader, model, criterion, writer, device
+            validation_dataloader, model, criterion, writer, device, epoch
         )
 
         if val_loss < best_loss:
             best_loss = val_loss
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "loss": val_loss,
+            best_acc = val_acc
+            best_f1 = val_f1
+            utils.save_checkpoint(
+                checkpoint_path=checkpoint_path,
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                loss=val_loss,
+                metadata={
+                    "model_name": model_name,
+                    "num_classes": NUM_CLASSES,
                 },
-                MODEL_PATH,
             )
             print(f"New best model found! Val Loss: {val_loss:.4f}, Saving...")
 
-        # Early stopping on validation loss
         if val_loss < early_stop.best_loss:
             early_stop.best_loss = val_loss
             early_stop.counter = 0
@@ -352,6 +263,36 @@ def main():
             if early_stop.counter >= early_stop.patience:
                 print("Early stopping triggered")
                 break
+
+    writer.close()
+    return {
+        "model_name": model_name,
+        "loss": best_loss,
+        "accuracy": best_acc,
+        "f1": best_f1,
+        "checkpoint": checkpoint_path,
+    }
+
+
+def print_training_summary(results):
+    print("\n--- Training Summary ---")
+    for result in results:
+        print(
+            f"{result['model_name']}: loss={result['loss']:.4f}, "
+            f"accuracy={result['accuracy']:.4f}, f1={result['f1']:.4f}, "
+            f"checkpoint={result['checkpoint']}"
+        )
+
+
+def main():
+    utils.configure_reproducibility(SEED)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Running on: ", device)
+    results = []
+    for base_model in BASE_MODELS:
+        results.append(train_model(base_model, device))
+
+    print_training_summary(results)
 
 
 if __name__ == "__main__":
