@@ -1,5 +1,4 @@
 *.pth
-!resnet152.pth
 /leaf_logs
 
 # datasets
