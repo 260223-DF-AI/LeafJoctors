@@ -92,7 +92,7 @@ class EarlyStopping:
 
 
 def train_loop(
-    dataloader, model, loss_fn, optimizer, epoch, best_loss, writer, device, early_stop
+    dataloader, model, loss_fn, optimizer, epoch, writer, device
 ):
     print(f"\n\n--- Training Epoch {epoch + 1} ---")
 
@@ -114,7 +114,7 @@ def train_loop(
     end_time = time.time()
     print(f"Epoch {epoch + 1} completed: {batch + 1} batches processed")
     print(f"Time taken: {end_time - start_time:.2f} seconds")
-    return model, None, False
+    return model
 
 
 def evaluate(dataloader, model, loss_fn, writer, device, epoch):
@@ -172,14 +172,14 @@ def evaluate(dataloader, model, loss_fn, writer, device, epoch):
 
 def get_model_config(model_name):
     if model_name not in MODEL_CONFIGS:
-        raise ValueError(f"Unsupported backbone: {model_name}")
+        raise ValueError(f"Unsupported base model: {model_name}")
 
     return MODEL_CONFIGS[model_name]
 
 
 def create_base_model(model_name):
-    backbone_config = get_model_config(model_name)
-    return backbone_config["builder"](weights=backbone_config["weights"])
+    model_config = get_model_config(model_name)
+    return model_config["builder"](weights=model_config["weights"])
 
 
 def train_model(model_name, device):
@@ -223,16 +223,14 @@ def train_model(model_name, device):
         early_stop.best_loss = best_loss
 
     for epoch in range(NUM_EPOCHS):
-        model, _, _ = train_loop(
+        model = train_loop(
             training_dataloader,
             model,
             criterion,
             optimizer,
             epoch,
-            best_loss,
             writer,
             device,
-            early_stop,
         )
         val_loss, val_acc, val_f1 = evaluate(
             validation_dataloader, model, criterion, writer, device, epoch
