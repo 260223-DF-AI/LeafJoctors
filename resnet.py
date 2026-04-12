@@ -3,6 +3,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.nn.utils import clip_grad_norm_
 from torchmetrics import Accuracy, F1Score, Precision, Recall
 from torchvision import models
 
@@ -74,7 +75,7 @@ class PreTrainedModel(nn.Module):
 
 class EarlyStopping:
     def __init__(self, patience=7):
-        self.patience = patience  # how many epochs without improvement in validation loss to allow
+        self.patience = patience  # epochs without validation loss improvement to allow
         self.counter = 0  # num epochs w/o improvement
         self.best_loss = float("inf")  # best loss
         self.early_stop = False
@@ -92,8 +93,18 @@ class EarlyStopping:
 
 
 def train_loop(
-    dataloader, model, loss_fn, optimizer, epoch, writer, device
+    dataloader,
+    model,
+    loss_fn,
+    optimizer,
+    epoch,
+    writer,
+    device,
+    max_grad_norm=1.0,
 ):
+    """
+    Training loop for one epoch
+    """
     print(f"\n\n--- Training Epoch {epoch + 1} ---")
 
     model.train()
@@ -105,6 +116,8 @@ def train_loop(
         loss = loss_fn(pred, y)
         optimizer.zero_grad()
         loss.backward()
+        # gradient clipping
+        clip_grad_norm_(model.parameters(), max_grad_norm)
         optimizer.step()
 
         writer.add_scalar("Loss/train", loss.item(), batch)
@@ -182,7 +195,7 @@ def create_base_model(model_name):
     return model_config["builder"](weights=model_config["weights"])
 
 
-def train_model(model_name, device):
+def train_model(model_name, device, max_grad_norm=1.0):
     transform = utils.build_data_transforms(input_size=INPUT_SIZE)
     datasets = utils.load_training_datasets(transform=transform)
     weights = utils.compute_class_weights(datasets, NUM_CLASSES, device)
@@ -231,6 +244,7 @@ def train_model(model_name, device):
             epoch,
             writer,
             device,
+            max_grad_norm,
         )
         val_loss, val_acc, val_f1 = evaluate(
             validation_dataloader, model, criterion, writer, device, epoch
@@ -287,8 +301,10 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running on: ", device)
     results = []
+
+    max_grad_norm = 1.0
     for base_model in BASE_MODELS:
-        results.append(train_model(base_model, device))
+        results.append(train_model(base_model, device, max_grad_norm=max_grad_norm))
 
     print_training_summary(results)
 
