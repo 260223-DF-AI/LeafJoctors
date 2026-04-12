@@ -1,4 +1,4 @@
-drfrond.pth
+*.pth
 /leaf_logs
 
 # datasets
