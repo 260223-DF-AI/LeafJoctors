@@ -74,7 +74,7 @@ class PreTrainedModel(nn.Module):
 
 class EarlyStopping:
     def __init__(self, patience=7):
-        self.patience = patience  # how many epochs without improvement in validation loss to allow
+        self.patience = patience  # epochs without validation loss improvement to allow
         self.counter = 0  # num epochs w/o improvement
         self.best_loss = float("inf")  # best loss
         self.early_stop = False
@@ -92,8 +92,17 @@ class EarlyStopping:
 
 
 def train_loop(
-    dataloader, model, loss_fn, optimizer, epoch, best_loss, writer, device, early_stop
+    dataloader,
+    model,
+    loss_fn,
+    optimizer,
+    epoch,
+    writer,
+    device,
 ):
+    """
+    Training loop for one epoch
+    """
     print(f"\n\n--- Training Epoch {epoch + 1} ---")
 
     model.train()
@@ -114,7 +123,7 @@ def train_loop(
     end_time = time.time()
     print(f"Epoch {epoch + 1} completed: {batch + 1} batches processed")
     print(f"Time taken: {end_time - start_time:.2f} seconds")
-    return model, None, False
+    return model
 
 
 def evaluate(dataloader, model, loss_fn, writer, device, epoch):
@@ -172,14 +181,14 @@ def evaluate(dataloader, model, loss_fn, writer, device, epoch):
 
 def get_model_config(model_name):
     if model_name not in MODEL_CONFIGS:
-        raise ValueError(f"Unsupported backbone: {model_name}")
+        raise ValueError(f"Unsupported base model: {model_name}")
 
     return MODEL_CONFIGS[model_name]
 
 
 def create_base_model(model_name):
-    backbone_config = get_model_config(model_name)
-    return backbone_config["builder"](weights=backbone_config["weights"])
+    model_config = get_model_config(model_name)
+    return model_config["builder"](weights=model_config["weights"])
 
 
 def train_model(model_name, device):
@@ -205,7 +214,7 @@ def train_model(model_name, device):
     best_loss = float("inf")
     best_acc = 0.0
     best_f1 = 0.0
-    checkpoint_path = f"{CHECKPOINT_DIR}/{model_name}2.pth"
+    checkpoint_path = f"{CHECKPOINT_DIR}/{model_name}.pth"
 
     print(f"\n--- Instantiate Model: {model_name} ---")
 
@@ -223,16 +232,14 @@ def train_model(model_name, device):
         early_stop.best_loss = best_loss
 
     for epoch in range(NUM_EPOCHS):
-        model, _, _ = train_loop(
+        model = train_loop(
             training_dataloader,
             model,
             criterion,
             optimizer,
             epoch,
-            best_loss,
             writer,
             device,
-            early_stop,
         )
         val_loss, val_acc, val_f1 = evaluate(
             validation_dataloader, model, criterion, writer, device, epoch
@@ -289,6 +296,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running on: ", device)
     results = []
+
     for base_model in BASE_MODELS:
         results.append(train_model(base_model, device))
 
