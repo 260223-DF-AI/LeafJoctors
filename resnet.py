@@ -3,7 +3,6 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.nn.utils import clip_grad_norm_
 from torchmetrics import Accuracy, F1Score, Precision, Recall
 from torchvision import models
 
@@ -100,7 +99,6 @@ def train_loop(
     epoch,
     writer,
     device,
-    max_grad_norm=1.0,
 ):
     """
     Training loop for one epoch
@@ -116,8 +114,6 @@ def train_loop(
         loss = loss_fn(pred, y)
         optimizer.zero_grad()
         loss.backward()
-        # gradient clipping
-        clip_grad_norm_(model.parameters(), max_grad_norm)
         optimizer.step()
 
         writer.add_scalar("Loss/train", loss.item(), batch)
@@ -195,7 +191,7 @@ def create_base_model(model_name):
     return model_config["builder"](weights=model_config["weights"])
 
 
-def train_model(model_name, device, max_grad_norm=1.0):
+def train_model(model_name, device):
     transform = utils.build_data_transforms(input_size=INPUT_SIZE)
     datasets = utils.load_training_datasets(transform=transform)
     weights = utils.compute_class_weights(datasets, NUM_CLASSES, device)
@@ -218,7 +214,7 @@ def train_model(model_name, device, max_grad_norm=1.0):
     best_loss = float("inf")
     best_acc = 0.0
     best_f1 = 0.0
-    checkpoint_path = f"{CHECKPOINT_DIR}/{model_name}2.pth"
+    checkpoint_path = f"{CHECKPOINT_DIR}/{model_name}.pth"
 
     print(f"\n--- Instantiate Model: {model_name} ---")
 
@@ -244,7 +240,6 @@ def train_model(model_name, device, max_grad_norm=1.0):
             epoch,
             writer,
             device,
-            max_grad_norm,
         )
         val_loss, val_acc, val_f1 = evaluate(
             validation_dataloader, model, criterion, writer, device, epoch
@@ -302,9 +297,8 @@ def main():
     print("Running on: ", device)
     results = []
 
-    max_grad_norm = 1.0
     for base_model in BASE_MODELS:
-        results.append(train_model(base_model, device, max_grad_norm=max_grad_norm))
+        results.append(train_model(base_model, device))
 
     print_training_summary(results)
 
