@@ -1,25 +1,23 @@
 from fastapi import FastAPI
 
-from app.routers.vision import vision_router
+from app.routers.agromonitoring import agro_router
 
 app = FastAPI(
-    title="LeafJoctors Leaf Saving Service", description="Central Leaf Saving API"
+    title="LeafJoctors Leaf Saving Service",
+    description="Central Leaf Saving API"
 )
 
 
+# Optional root route (prevents 404 on "/")
 @app.get("/")
 def get_root():
-    return {"message": "Hello from main"}
+    return {"message": "LeafJoctors API is running"}
 
 
-# registers router endpoints
-app.include_router(vision_router)
+# Register routers
+app.include_router(agro_router)
 
 
 def start_server():
-    """
-    Launch the API server with Uvicorn
-    """
     import uvicorn
-
     uvicorn.run("app.server:app", host="localhost", port=8000, reload=True)
