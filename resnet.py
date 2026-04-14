@@ -11,10 +11,12 @@ import utils
 # DEFAULT VALUES
 SEED = 55
 NUM_CLASSES = 3
-INPUT_SIZE = 224
+# INPUT_SIZE = 224
+INPUT_SIZE = 1120
 NUM_EPOCHS = 100
 BATCH_SIZE = 24
-NUM_WORKERS = 16
+# NUM_WORKERS = 16
+NUM_WORKERS = 8
 TRAIN_SPLIT = 0.8
 CHECKPOINT_DIR = "checkpoints"
 LOG_ROOT = "leaf_logs"
@@ -39,7 +41,9 @@ MODEL_CONFIGS = {
     },
 }
 
-BASE_MODELS = MODEL_CONFIGS.keys()
+BASE_MODELS = list(MODEL_CONFIGS.keys())
+# print(f"{BASE_MODELS[-1]=}, {type(BASE_MODELS)=}")
+BASE_MODELS = BASE_MODELS[-1:]
 
 
 class PreTrainedModel(nn.Module):

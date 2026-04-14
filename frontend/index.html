@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dr. Frond — Leaf Diagnosis</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            frond: {
+              50:  '#FAFAF5',
+              100: '#F5F0E1',
+              200: '#EDE8D5',
+              300: '#D4CDB8',
+              400: '#B5AC8E',
+            },
+            leaf: {
+              light: '#6B9B37',
+              DEFAULT: '#4A7C2E',
+              dark: '#2D5016',
+            },
+            bark: {
+              light: '#8B6914',
+              DEFAULT: '#5C4033',
+              dark: '#3B2A20',
+            },
+            gold: '#D4A017',
+          },
+          fontFamily: {
+            display: ['"Playfair Display"', 'Georgia', 'serif'],
+            body: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .drop-highlight { border-color: #4A7C2E !important; background-color: #f0f7e8 !important; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 0.8s linear infinite; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.4s ease-out; }
+  </style>
+</head>
+<body class="bg-frond-50 text-bark min-h-screen flex flex-col">
+
+  <!-- Demo Mode Banner -->
+  <div id="demoBanner" class="hidden bg-gold/90 text-bark-dark text-center text-sm py-1.5 px-4 font-medium">
+    🌿 Demo mode — API not connected. Showing sample results.
+  </div>
+
+  <!-- Header -->
+  <header class="bg-leaf-dark text-frond-50 shadow-lg">
+    <div class="max-w-5xl mx-auto flex items-center gap-4 px-6 py-4">
+      <!-- Logo Placeholder -->
+      <div class="w-12 h-12 rounded-full bg-frond-100/20 border-2 border-frond-200/30 flex items-center justify-center flex-shrink-0"
+           title="Logo placeholder">
+        <img id="logo" src="logo.png" alt="Dr. Frond Logo"
+             class="w-full h-full rounded-full object-cover"
+             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+        <span class="hidden items-center justify-center text-xl">🌿</span>
+      </div>
+      <div>
+        <h1 class="text-2xl md:text-3xl font-display font-bold tracking-tight">Dr. Frond</h1>
+        <p class="text-frond-200 text-sm">Plant Leaf Health Diagnostics</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-8 md:py-12">
+
+    <!-- Hero -->
+    <div class="text-center mb-8">
+      <h2 class="text-3xl md:text-4xl font-display font-bold text-leaf-dark mb-3">
+        Upload a leaf. Get a diagnosis.
+      </h2>
+      <p class="text-bark-light text-lg max-w-xl mx-auto">
+        Our highly esteemed leaf doctor, Dr. Frond, is universally recognized to be outstanding in his field. Help a leaf out and upload its likeness today to receive a tailored treatment plan.
+      </p>
+    </div>
+
+    <!-- Upload Card -->
+    <div class="bg-white rounded-2xl shadow-md border border-frond-200 p-6 md:p-8 mb-6">
+
+      <!-- Drop Zone -->
+      <div id="dropZone"
+           class="relative border-2 border-dashed border-frond-300 rounded-xl p-8 text-center cursor-pointer transition-colors hover:border-leaf hover:bg-leaf/5">
+        <input type="file" id="fileInput" accept="image/*" class="hidden" />
+
+        <!-- Default state -->
+        <div id="uploadPrompt">
+          <div class="mx-auto w-16 h-16 rounded-full bg-frond-100 flex items-center justify-center mb-4">
+            <svg class="w-8 h-8 text-leaf" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+          <p class="text-bark font-medium mb-1">Drag &amp; drop your leaf image here</p>
+          <p class="text-sm text-bark-light">or <span class="text-leaf font-semibold underline">click to browse</span></p>
+          <p class="text-xs text-frond-400 mt-2">PNG, JPG up to 10 MB</p>
+        </div>
+
+        <!-- Preview state (hidden) -->
+        <div id="previewArea" class="hidden">
+          <img id="previewImg" src="" alt="Leaf preview"
+               class="max-h-72 mx-auto rounded-lg shadow-sm object-contain" />
+          <p id="fileName" class="text-sm text-bark-light mt-3 truncate"></p>
+        </div>
+      </div>
+
+      <!-- Remove button (hidden) -->
+      <div id="removeWrapper" class="hidden flex justify-center mt-3">
+        <button id="removeBtn"
+                class="text-sm text-bark-light hover:text-red-600 transition-colors flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          Remove image
+        </button>
+      </div>
+
+      <!-- Error Alert -->
+      <div id="errorAlert" class="hidden mt-4 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex items-start gap-2">
+        <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span id="errorText"></span>
+      </div>
+
+      <!-- Analyze Button -->
+      <button id="analyzeBtn" disabled
+              class="mt-6 w-full py-3 px-6 rounded-xl font-semibold text-lg transition-all
+                     bg-leaf text-white shadow-md hover:bg-leaf-dark hover:shadow-lg
+                     disabled:bg-frond-300 disabled:text-frond-400 disabled:shadow-none disabled:cursor-not-allowed">
+        <span id="analyzeBtnText">Analyze Leaf</span>
+        <svg id="analyzeBtnSpinner" class="hidden spinner inline-block w-5 h-5 ml-2 border-2 border-white/30 border-t-white rounded-full" viewBox="0 0 24 24"></svg>
+      </button>
+    </div>
+
+    <!-- Results Panel (hidden) -->
+    <div id="resultsPanel" class="hidden fade-in bg-white rounded-2xl shadow-md border border-frond-200 p-6 md:p-8">
+      <h3 class="font-display text-xl font-bold text-leaf-dark mb-5 flex items-center gap-2">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        Diagnosis Results
+      </h3>
+
+      <!-- Classification Badge -->
+      <div class="flex flex-col sm:flex-row sm:items-center gap-4 mb-5">
+        <div>
+          <p class="text-sm text-bark-light mb-1">Classification</p>
+          <span id="classificationBadge"
+                class="inline-block px-4 py-1.5 rounded-full text-sm font-bold uppercase tracking-wide"></span>
+        </div>
+        <div class="sm:ml-auto">
+          <p class="text-sm text-bark-light mb-1">Confidence</p>
+          <div class="flex items-center gap-3">
+            <div class="w-32 h-2.5 bg-frond-200 rounded-full overflow-hidden">
+              <div id="confidenceBar" class="h-full rounded-full transition-all duration-700 ease-out" style="width: 0%"></div>
+            </div>
+            <span id="confidenceText" class="text-sm font-semibold text-bark"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Treatment Recommendation -->
+      <div class="bg-frond-100 rounded-xl p-5 border border-frond-200">
+        <p class="text-sm font-semibold text-leaf-dark mb-2 flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Treatment Recommendation
+        </p>
+        <p id="treatmentText" class="text-bark leading-relaxed"></p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-frond-200/60 border-t border-frond-300 py-4 mt-auto">
+    <p class="text-center text-sm text-bark-light">
+      &copy; 2026 Dr. Frond &mdash; LeafJoctors Plant Diagnostics
+    </p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
