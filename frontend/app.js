@@ -10,6 +10,7 @@
   const fileName       = document.getElementById("fileName");
   const removeWrapper  = document.getElementById("removeWrapper");
   const removeBtn      = document.getElementById("removeBtn");
+  const locationSelect = document.getElementById("locationSelect");
   const analyzeBtn     = document.getElementById("analyzeBtn");
   const analyzeBtnText = document.getElementById("analyzeBtnText");
   const analyzeBtnSpinner = document.getElementById("analyzeBtnSpinner");
@@ -73,11 +74,15 @@
     errorAlert.classList.add("hidden");
   }
 
+  function updateAnalyzeButtonState() {
+    analyzeBtn.disabled = isLoading || !selectedFile || !locationSelect.value;
+  }
+
   function setLoading(loading) {
     isLoading = loading;
-    analyzeBtn.disabled = loading;
     analyzeBtnText.textContent = loading ? "Analyzing…" : "Analyze Leaf";
     analyzeBtnSpinner.classList.toggle("hidden", !loading);
+    updateAnalyzeButtonState();
   }
 
   function validateFile(file) {
@@ -111,7 +116,7 @@
       previewArea.classList.remove("hidden");
       removeWrapper.classList.remove("hidden");
       fileName.textContent = file.name;
-      analyzeBtn.disabled = false;
+      updateAnalyzeButtonState();
     };
     reader.readAsDataURL(file);
   }
@@ -124,9 +129,9 @@
     uploadPrompt.classList.remove("hidden");
     removeWrapper.classList.add("hidden");
     resultsPanel.classList.add("hidden");
-    analyzeBtn.disabled = true;
     demoBanner.classList.add("hidden");
     hideError();
+    updateAnalyzeButtonState();
   }
 
   // ── Render results ────────────────────────────────────────
@@ -160,6 +165,10 @@
   // ── API call / mock ────────────────────────────────────────
   async function analyzeLeaf() {
     if (!selectedFile || isLoading) return;
+    if (!locationSelect.value) {
+      showError("Please select a location before analyzing.");
+      return;
+    }
 
     hideError();
     setLoading(true);
@@ -168,6 +177,7 @@
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
+      formData.append("location", locationSelect.value);
 
       const response = await fetch(API_URL, {
         method: "POST",
@@ -183,16 +193,14 @@
       demoBanner.classList.add("hidden");
       renderResults(data);
     } catch (err) {
-      // If API unreachable, fall back to mock
+      // if API unreachable, fall back to mock
       console.warn("API unavailable, using demo mode:", err.message);
       demoBanner.classList.remove("hidden");
 
       const mock = MOCK_RESPONSES[Math.floor(Math.random() * MOCK_RESPONSES.length)];
-      // Add slight random jitter to confidence for realism
       const jittered = { ...mock, confidence: mock.confidence + (Math.random() * 0.06 - 0.03) };
       jittered.confidence = Math.min(0.99, Math.max(0.5, jittered.confidence));
 
-      // Simulate network delay
       await new Promise((r) => setTimeout(r, 800 + Math.random() * 600));
       renderResults(jittered);
     } finally {
@@ -202,7 +210,6 @@
 
   // ── Event listeners ───────────────────────────────────────
 
-  // Click to browse
   dropZone.addEventListener("click", () => {
     if (!isLoading) fileInput.click();
   });
@@ -211,7 +218,11 @@
     if (fileInput.files.length > 0) handleFile(fileInput.files[0]);
   });
 
-  // Drag & drop
+  locationSelect.addEventListener("change", () => {
+    hideError();
+    updateAnalyzeButtonState();
+  });
+
   dropZone.addEventListener("dragover", (e) => {
     e.preventDefault();
     dropZone.classList.add("drop-highlight");
@@ -228,7 +239,6 @@
     if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
   });
 
-  // Remove file
   removeBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     clearFile();

@@ -1,5 +1,5 @@
 import os
-from collections import Counter
+from collections import Counter, defaultdict
 
 import torch
 from torch import nn
@@ -8,7 +8,6 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 
 import data_handler
-
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -172,3 +171,47 @@ class OldLeafModel(nn.Module):
         x = self.features(x)
         x = self.classify(x)
         return x
+
+
+def get_class_counts_from_concatdataset(concat_dataset):
+    class_counts = defaultdict(int)
+    class_names = set()
+    for ds in concat_dataset.datasets:
+        # ds is an ImageFolder
+        for idx, class_name in enumerate(ds.classes):
+            count = sum(1 for t in ds.targets if t == idx)
+            class_counts[class_name] += count
+            class_names.add(class_name)
+    return sorted(class_names), dict(class_counts)
+
+if __name__ == "__main__":
+    transform = build_data_transforms(224)
+    plant_pathology_root="data/plant_pathology"
+    olid_root="data/OLID"
+
+    olid = data_handler.TripleLabelDataset(
+        root=olid_root,
+        transform=transform,
+    )
+
+    datasets = []
+
+    plants = [
+        plant
+        for plant in os.listdir(plant_pathology_root)
+        if os.path.isdir(os.path.join(plant_pathology_root, plant))
+    ]
+
+    for plant in plants:
+        datasets.append(
+            data_handler.BinaryLabelDataset(
+                root=os.path.join(plant_pathology_root, plant),
+                transform=transform,
+            )
+        )
+
+    plantpath = ConcatDataset(datasets)
+    classes, counts = get_class_counts_from_concatdataset(plantpath)
+
+    print(f"OLID classes: {olid.classes}")
+    print(f"PlantPathology classes: {classes}, counts: {counts}")
