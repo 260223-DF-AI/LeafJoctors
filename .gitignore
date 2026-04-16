@@ -151,6 +151,8 @@ activemq-data/
 
 # SageMath parsed files
 *.sage.py
+aws/
+model.tar.gz
 
 # Environments
 .env
