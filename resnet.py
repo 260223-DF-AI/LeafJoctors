@@ -14,7 +14,8 @@ NUM_CLASSES = 3
 INPUT_SIZE = 224
 NUM_EPOCHS = 100
 BATCH_SIZE = 24
-NUM_WORKERS = 16
+# NUM_WORKERS = 16
+NUM_WORKERS = 8
 TRAIN_SPLIT = 0.8
 CHECKPOINT_DIR = "checkpoints"
 LOG_ROOT = "leaf_logs"
@@ -39,7 +40,9 @@ MODEL_CONFIGS = {
     },
 }
 
-BASE_MODELS = MODEL_CONFIGS.keys()
+BASE_MODELS = list(MODEL_CONFIGS.keys())
+# print(f"{BASE_MODELS[-1]=}, {type(BASE_MODELS)=}")
+BASE_MODELS = BASE_MODELS[-1:]
 
 
 class PreTrainedModel(nn.Module):
@@ -49,7 +52,8 @@ class PreTrainedModel(nn.Module):
         trainable_layers=None,
     ):
         super(PreTrainedModel, self).__init__()
-        self.model = base_model
+        self.model = models.resnet152(weights=models.ResNet152_Weights.DEFAULT)
+        # self.model = base_model
 
         # freeze base model layers
         for param in self.model.parameters():
