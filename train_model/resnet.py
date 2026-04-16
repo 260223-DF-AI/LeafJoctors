@@ -6,7 +6,7 @@ import torch.optim as optim
 from torchmetrics import Accuracy, F1Score, Precision, Recall
 from torchvision import models
 
-import utils
+import train_model.utils as utils
 
 # DEFAULT VALUES
 SEED = 55

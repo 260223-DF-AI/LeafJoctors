@@ -6,7 +6,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.services.agro_service import fetch_polygons, get_soil, get_weather_by_polygon
 from app.services.gemini_service import build_prompt, get_response
-from predict import make_prediction
+from sage.predict import make_prediction
 
 agro_router = APIRouter(prefix="/agromonitoring", tags=["agromonitoring"])
 

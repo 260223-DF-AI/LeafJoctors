@@ -49,5 +49,8 @@ def make_prediction(inp, endpoint_name=None, content_type=None):
 
 
 if __name__ == "__main__":
-    result = make_prediction("data\\cedar_apple_rust_leaf.jpg", endpoint_name="pytorch-inference-2026-04-16-15-51-52-235")
+    result = make_prediction(
+        "data/chicago_cedar_apple_rust_leaf.jpg",
+        endpoint_name="pytorch-inference-2026-04-16-15-51-52-235",
+    )
     print(result)
