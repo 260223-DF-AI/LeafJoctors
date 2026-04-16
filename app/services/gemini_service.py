@@ -1,8 +1,12 @@
 import asyncio
+import os
 
+from dotenv import load_dotenv
 from google import genai
 
-GEMINI_API_KEY = "AIzaSyAQB1JnoJStglL3X5Ok4WLDitMfwtWnXWI"
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -36,7 +40,8 @@ Condition: {condition}
 3. Recommend watering/fertilizer adjustments
 4. Warn about risks
 
-Keep response concise.
+Keep response concise. Do not format your response with markdown.
+Instead, use line breaks to format in plaintext.
 """
 
 
@@ -45,8 +50,7 @@ async def get_response(prompt: str) -> str:
     response = await loop.run_in_executor(
         None,
         lambda: client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=prompt
-        )
+            model="gemini-3-flash-preview", contents=prompt
+        ),
     )
     return response.text

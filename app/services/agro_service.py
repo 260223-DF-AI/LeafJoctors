@@ -1,6 +1,11 @@
-import httpx
+import os
 
-API_KEY = "261c2e50a80208dee799b287b0428c80"
+import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
+
+API_KEY = os.getenv("AGROMONITORING_API_KEY")
 BASE_URL = "http://api.agromonitoring.com/agro/1.0"
 
 
@@ -16,8 +21,7 @@ async def fetch_polygons():
 async def get_soil(poly_id: str):
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            f"{BASE_URL}/soil",
-            params={"appid": API_KEY, "polyid": poly_id}
+            f"{BASE_URL}/soil", params={"appid": API_KEY, "polyid": poly_id}
         )
         response.raise_for_status()
         return response.json()
@@ -35,8 +39,7 @@ async def get_weather_by_polygon(poly_id: str):
 
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            f"{BASE_URL}/weather",
-            params={"appid": API_KEY, "lat": lat, "lon": lon}
+            f"{BASE_URL}/weather", params={"appid": API_KEY, "lat": lat, "lon": lon}
         )
         response.raise_for_status()
         return response.json()

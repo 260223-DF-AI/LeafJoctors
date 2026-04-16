@@ -30,7 +30,8 @@
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-  const API_URL = "/vision/analyze";
+  const API_PATH = "/agromonitoring/analyze";
+  const API_ORIGIN = "http://localhost:8000";
 
   // ── Classification styling map ────────────────────────────
   const CLASS_STYLES = {
@@ -177,9 +178,9 @@
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      formData.append("location", locationSelect.value);
+      const endpoint = `${API_ORIGIN}${API_PATH}/${encodeURIComponent(locationSelect.value)}`;
 
-      const response = await fetch(API_URL, {
+      const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
       });
@@ -190,8 +191,13 @@
       }
 
       const data = await response.json();
+      const normalized = {
+        classification: data?.prediction?.classification || "Healthy",
+        confidence: Number(data?.prediction?.confidence ?? 0.5),
+        treatment: String(data?.analysis ?? "No treatment recommendation available."),
+      };
       demoBanner.classList.add("hidden");
-      renderResults(data);
+      renderResults(normalized);
     } catch (err) {
       // if API unreachable, fall back to mock
       console.warn("API unavailable, using demo mode:", err.message);
