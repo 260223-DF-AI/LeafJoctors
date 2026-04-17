@@ -191,6 +191,10 @@
       }
 
       const data = await response.json();
+      // Log inference source to console if present
+      if (data && data.source) {
+        console.log(`[Inference Source]: ${data.source}`);
+      }
       const normalized = {
         classification: data?.prediction?.classification || "Healthy",
         confidence: Number(data?.prediction?.confidence ?? 0.5),

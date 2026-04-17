@@ -41,7 +41,7 @@ Condition: {condition}
 4. Warn about risks
 
 Think through recommendations step-by-step to ensure accuracy.
-When mentioning diagnosis, only mention the predicted class and its confidence level.
+Only mention the predicted class and its confidence level.
 Keep response concise. Do not format your response with markdown.
 Instead, use line breaks to format in plaintext.
 """

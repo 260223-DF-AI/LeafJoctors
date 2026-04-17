@@ -6,7 +6,25 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.services.agro_service import fetch_polygons, get_soil, get_weather_by_polygon
 from app.services.gemini_service import build_prompt, get_response
+from model.code.inference import input_fn, model_fn, predict_fn
+
 from sage.predict import make_prediction
+
+_cached_local_model = None
+_LOCAL_MODEL_DIR = "model/"
+
+
+def _get_local_model():
+    global _cached_local_model
+    if _cached_local_model is None:
+        _cached_local_model = model_fn(_LOCAL_MODEL_DIR)
+    return _cached_local_model
+
+
+def _run_local_inference(image_bytes, content_type):
+    input_tensor = input_fn(image_bytes, content_type)
+    return predict_fn(input_tensor, _get_local_model())
+
 
 agro_router = APIRouter(prefix="/agromonitoring", tags=["agromonitoring"])
 
@@ -90,7 +108,7 @@ async def analyze(location: str, file: UploadFile = File(...)):
         if not image_bytes:
             raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-        # sagemaker prediction
+        # sagemaker prediction with fallback to local
         try:
             prediction = await asyncio.to_thread(
                 make_prediction,
@@ -98,13 +116,21 @@ async def analyze(location: str, file: UploadFile = File(...)):
                 content_type=file.content_type,
                 endpoint_name="pytorch-inference-2026-04-16-15-51-52-235",
             )
-        except ValueError as e:
-            raise HTTPException(status_code=500, detail=str(e)) from e
+            source = "SageMaker"
         except Exception as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"SageMaker inference failed: {e}",
-            ) from e
+            # fallback to local inference if sagemaker fails for whatever reason
+            try:
+                prediction = await asyncio.to_thread(
+                    _run_local_inference,
+                    image_bytes,
+                    file.content_type,
+                )
+                source = "Local"
+            except Exception as local_e:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"SageMaker inference failed: {e}; Local inference also failed: {local_e}",
+                ) from local_e
 
         # soil/weather  data
         soil = await get_soil(poly_id)
@@ -119,6 +145,7 @@ async def analyze(location: str, file: UploadFile = File(...)):
             "polygon_id": poly_id,
             "prediction": prediction,
             "analysis": analysis,
+            "source": source,
         }
 
     except HTTPException:
