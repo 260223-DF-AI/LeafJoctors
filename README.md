@@ -1,12 +1,14 @@
 # LeafJoctors
 
-## Datasets from specific locations
-- [OLID Dataset](https://pmc.ncbi.nlm.nih.gov/articles/PMC10523147/#s6)
+## Datasets
+- [OLID Dataset](https://pmc.ncbi.nlm.nih.gov/articles/PMC10523147/#s6) - Gazipur, Bangladesh
+- [Plant Pathology Dataset](https://data.mendeley.com/datasets/hb74ynkjcn/1) - Katra, India
 
-- [Plant Pathology Dataset](https://data.mendeley.com/datasets/hb74ynkjcn/1)
 
+## Process to run program
+*Run following commands from the root directory*
+- Ensure model is deployed to SageMaker: run `py sage/deploy.py` to deploy model
+- Boot FastAPI server with `py -m app`
+- Access website by opening `index.html`
 
-## Unusable? datasets
-Farm Insect Detection: https://www.kaggle.com/code/utkarshsaxenadn/farm-insect-detection-transfer-learning
-
-Crop Disease Prediction End-to-End: https://www.kaggle.com/code/durgeshrao9993/crop-disease-prediction-end-to-end
+- Run model training program with `py -m train_model.resnet`

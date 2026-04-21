@@ -1,56 +1,61 @@
-import httpx
-from fastapi import HTTPException, APIRouter, UploadFile, File
+import asyncio
+import os
 
-from app.services.agro_service import (
-    fetch_polygons,
-    get_soil,
-    get_weather_by_polygon
-)
+from dotenv import load_dotenv
+from fastapi import APIRouter, File, HTTPException, UploadFile
+
+from app.services.agro_service import fetch_polygons, get_soil, get_weather_by_polygon
 from app.services.gemini_service import build_prompt, get_response
+from model.code.inference import input_fn, model_fn, predict_fn
+
+from sage.predict import make_prediction
+
+_cached_local_model = None
+_LOCAL_MODEL_DIR = "model/"
+
+
+def _get_local_model():
+    global _cached_local_model
+    if _cached_local_model is None:
+        _cached_local_model = model_fn(_LOCAL_MODEL_DIR)
+    return _cached_local_model
+
+
+def _run_local_inference(image_bytes, content_type):
+    input_tensor = input_fn(image_bytes, content_type)
+    return predict_fn(input_tensor, _get_local_model())
+
 
 agro_router = APIRouter(prefix="/agromonitoring", tags=["agromonitoring"])
 
-API_KEY = "261c2e50a80208dee799b287b0428c80"
+load_dotenv()
+
+API_KEY = os.getenv("AGROMONITORING_API_KEY")
 BASE_URL = "http://api.agromonitoring.com/agro/1.0"
+ALLOWED_LOCATIONS = {"chicago": "Chicago", "india": "India", "bangladesh": "Bangladesh"}
 
 
-# -----------------------------
-# Debug: polygons
-# -----------------------------
-@agro_router.get("/polygons")
-async def polygon_list():
-    try:
-        polygons = await fetch_polygons()
-        return {
-            "count": len(polygons),
-            "polygons": polygons
-        }
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def _resolve_polygon_by_location(location: str):
+    normalized = location.strip().lower()
+    canonical_location = ALLOWED_LOCATIONS.get(normalized)
+    if not canonical_location:
+        raise HTTPException(
+            status_code=400,
+            detail="Location must be one of: Chicago, India, Bangladesh.",
+        )
 
+    polygons = await fetch_polygons()
+    polygon = next(
+        (p for p in polygons if str(p.get("name", "")).strip().lower() == normalized),
+        None,
+    )
+    if not polygon:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No polygon found for location '{canonical_location}'.",
+        )
 
-# -----------------------------
-# Soil
-# -----------------------------
-@agro_router.get("/soil/{poly_id}")
-async def soil(poly_id: str):
-    try:
-        data = await get_soil(poly_id)
-        return {"polygon_id": poly_id, "soil": data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# -----------------------------
-# Weather
-# -----------------------------
-@agro_router.get("/weather/{poly_id}")
-async def weather(poly_id: str):
-    try:
-        data = await get_weather_by_polygon(poly_id)
-        return {"polygon_id": poly_id, "weather": data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return canonical_location, polygon
 
 
 # -----------------------------
@@ -92,31 +97,58 @@ async def weather(poly_id: str):
 # -----------------------------
 # FULL ANALYSIS
 # -----------------------------
-@agro_router.post("/analyze/{poly_id}")
-async def analyze(poly_id: str, file: UploadFile = File(...)):
+@agro_router.post("/analyze/{location}")
+async def analyze(location: str, file: UploadFile = File(...)):
     try:
-        # 1. Read image
-        # image_bytes = await file.read()
+        canonical_location, polygon = await _resolve_polygon_by_location(location)
+        poly_id = polygon["id"]
 
-        # 2. SageMaker prediction
-        # prediction = predict(image_bytes, file.content_type)
-        prediction = ""
+        # read image
+        image_bytes = await file.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-        # 3. External data
+        # sagemaker prediction with fallback to local
+        try:
+            prediction = await asyncio.to_thread(
+                make_prediction,
+                image_bytes,
+                content_type=file.content_type,
+                endpoint_name="pytorch-inference-2026-04-16-15-51-52-235",
+            )
+            source = "SageMaker"
+        except Exception as e:
+            # fallback to local inference if sagemaker fails for whatever reason
+            try:
+                prediction = await asyncio.to_thread(
+                    _run_local_inference,
+                    image_bytes,
+                    file.content_type,
+                )
+                source = "Local"
+            except Exception as local_e:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"SageMaker inference failed: {e}; Local inference also failed: {local_e}",
+                ) from local_e
+
+        # soil/weather  data
         soil = await get_soil(poly_id)
         weather = await get_weather_by_polygon(poly_id)
 
-        # 4. Build prompt
+        # get gemini stuff
         prompt = build_prompt(soil, weather, prediction)
-
-        # 5. Gemini
         analysis = await get_response(prompt)
 
         return {
+            "location": canonical_location,
             "polygon_id": poly_id,
             "prediction": prediction,
-            "analysis": analysis
+            "analysis": analysis,
+            "source": source,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
